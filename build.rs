@@ -165,6 +165,8 @@ fn prepare_tensorflow_library() {
     {
         let arch_var = format!("TFLITE_{}_LIB_DIR", arch.replace("-", "_").to_uppercase());
         let all_var = "TFLITE_LIB_DIR".to_string();
+        let lib_name_var = "TFLITE_LIB_NAME".to_string();
+
         let lib_dir = env::var(&arch_var).or(env::var(&all_var)).unwrap_or_else(|_| {
             panic!(
                 "[feature = build] not set and environment variables {} and {} are not set",
@@ -172,13 +174,24 @@ fn prepare_tensorflow_library() {
             )
         });
         println!("cargo:rustc-link-search=native={}", lib_dir);
-        let static_dynamic = if Path::new(&lib_dir).join("libtensorflow-lite.a").exists() {
-            "static"
-        } else {
-            "dylib"
+
+        let lib_name = env::var(&lib_name_var).unwrap_or_else(|_| "libtensorflow-lite.a".to_string());
+
+        let lib_path = Path::new(&lib_dir).join(&lib_name);
+
+        if !lib_path.exists() {
+            panic!("Library file not found: {}", lib_path.display());
+        }
+
+        let (lib_name_without_extension, lib_type) = match lib_name.rsplit_once('.') {
+            Some((name, "a")) => (name.strip_prefix("lib").unwrap_or(name), "static"),
+            Some((name, "so")) => (name.strip_prefix("lib").unwrap_or(name), "dylib"),
+            _ => panic!("Unsupported library file extension. Use .a for static or .so for dynamic libraries."),
         };
-        println!("cargo:rustc-link-lib={}=tensorflow-lite", static_dynamic);
+
+        println!("cargo:rustc-link-lib={}={}", lib_type, lib_name_without_extension);
         println!("cargo:rerun-if-changed={}", lib_dir);
+        println!("cargo:rerun-if-env-changed={}", lib_name_var);
     }
     println!("cargo:rustc-link-lib=dylib=pthread");
     println!("cargo:rustc-link-lib=dylib=dl");
